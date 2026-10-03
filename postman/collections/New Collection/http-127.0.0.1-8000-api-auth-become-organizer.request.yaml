@@ -1,0 +1,16 @@
+$kind: http-request
+name: http://127.0.0.1:8000/api/auth/become-organizer
+description: ""
+url: http://127.0.0.1:8000/api/auth/become-organizer
+method: POST
+headers:
+  Accept: application/json
+  Content-Type: application/json
+body:
+  type: json
+  content: ""
+auth:
+  type: bearer
+  credentials:
+    token: 79|xBepJBDViApfPCJoJrQWPmtKUbWNsYXRXELvdVsVf5e806d8
+order: 1790247531445

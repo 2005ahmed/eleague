@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\AdminDashboardController;
 use App\Http\Controllers\Api\OrganizerDashboardController;
+use App\Http\Controllers\Api\MatchMessageController;
 
 
 /*
@@ -92,12 +93,64 @@ Route::get('/tournaments/{tournament}', [
 
 /*
 |--------------------------------------------------------------------------
+| Public Tournament Players
+|--------------------------------------------------------------------------
+*/
+
+Route::get(
+    '/tournaments/{tournament}/players',
+    [
+        TournamentRegistrationController::class,
+        'index'
+    ]
+)->whereNumber('tournament');
+
+
+/*
+|--------------------------------------------------------------------------
+| Public Tournament Matches
+|--------------------------------------------------------------------------
+*/
+
+Route::get(
+    '/tournaments/{tournament}/matches',
+    [
+        MatchController::class,
+        'index'
+    ]
+)->whereNumber('tournament');
+
+Route::get(
+    '/matches/{match}',
+    [
+        MatchController::class,
+        'show'
+    ]
+)->whereNumber('match');
+
+
+/*
+|--------------------------------------------------------------------------
+| Tournament Champion
+|--------------------------------------------------------------------------
+*/
+
+Route::get(
+    '/tournaments/{tournament}/champion',
+    [
+        TournamentController::class,
+        'champion'
+    ]
+)->whereNumber('tournament');
+
+
+/*
+|--------------------------------------------------------------------------
 | Authenticated Routes
 |--------------------------------------------------------------------------
 */
 
 Route::middleware('auth:sanctum')->group(function () {
-
 
     /*
     |--------------------------------------------------------------------------
@@ -110,7 +163,7 @@ Route::middleware('auth:sanctum')->group(function () {
         'index'
     ]);
 
-     Route::get('/organizer/dashboard', [
+    Route::get('/organizer/dashboard', [
         OrganizerDashboardController::class,
         'index'
     ]);
@@ -167,14 +220,18 @@ Route::middleware('auth:sanctum')->group(function () {
     ])->whereNumber('tournament');
 
     Route::put(
-    '/tournaments/{tournament}/status',
-    [TournamentController::class, 'updateStatus']
-)->whereNumber('tournament');
+        '/tournaments/{tournament}/status',
+        [
+            TournamentController::class,
+            'updateStatus'
+        ]
+    )->whereNumber('tournament');
 
-Route::get('/organizer/tournaments', [
+    Route::get('/organizer/tournaments', [
         TournamentController::class,
         'myTournaments'
     ]);
+
 
     /*
     |--------------------------------------------------------------------------
@@ -199,28 +256,55 @@ Route::get('/organizer/tournaments', [
     )->whereNumber('tournament');
 
 
+    /*
+    |--------------------------------------------------------------------------
+    | Tournament Publish / Cancel
+    |--------------------------------------------------------------------------
+    */
 
-    Route::put(
-    '/tournaments/{tournament}/publish',
-    [TournamentController::class, 'publish']
-)->whereNumber('tournament');
+    Route::post(
+        '/tournaments/{tournament}/publish',
+        [
+            TournamentController::class,
+            'publish'
+        ]
+    )->whereNumber('tournament');
 
-Route::put(
-    '/tournaments/{tournament}/cancel',
-    [TournamentController::class, 'cancel']
-)->whereNumber('tournament');
+    Route::post(
+        '/tournaments/{tournament}/cancel',
+        [
+            TournamentController::class,
+            'cancel'
+        ]
+    )->whereNumber('tournament');
+
 
     /*
     |--------------------------------------------------------------------------
-    | Tournament Players
+    | Tournament Standings
     |--------------------------------------------------------------------------
     */
 
     Route::get(
-        '/tournaments/{tournament}/players',
+        '/tournaments/{tournament}/standings',
         [
-            TournamentRegistrationController::class,
-            'index'
+            TournamentController::class,
+            'standings'
+        ]
+    )->whereNumber('tournament');
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Tournament Group Qualification
+    |--------------------------------------------------------------------------
+    */
+
+    Route::post(
+        '/tournaments/{tournament}/groups/qualify',
+        [
+            TournamentController::class,
+            'qualifyGroups'
         ]
     )->whereNumber('tournament');
 
@@ -242,6 +326,37 @@ Route::put(
 
     /*
     |--------------------------------------------------------------------------
+    | Match Chat
+    |--------------------------------------------------------------------------
+    */
+
+    Route::get(
+        '/matches/{match}/messages',
+        [
+            MatchMessageController::class,
+            'index'
+        ]
+    )->whereNumber('match');
+
+    Route::post(
+        '/matches/{match}/messages',
+        [
+            MatchMessageController::class,
+            'store'
+        ]
+    )->whereNumber('match');
+
+    Route::patch(
+        '/messages/{message}/read',
+        [
+            MatchMessageController::class,
+            'markAsRead'
+        ]
+    )->whereNumber('message');
+
+
+    /*
+    |--------------------------------------------------------------------------
     | Matches
     |--------------------------------------------------------------------------
     */
@@ -250,6 +365,10 @@ Route::put(
         MatchController::class,
         'myMatches'
     ]);
+    Route::get(
+    '/tournaments/{tournament}/matches',
+    [TournamentController::class, 'matches']
+)->whereNumber('tournament');
 
 
     /*
@@ -408,56 +527,3 @@ Route::put(
         ]
     );
 });
-
-
-/*
-|--------------------------------------------------------------------------
-| Public Tournament Players
-|--------------------------------------------------------------------------
-*/
-
-Route::get(
-    '/tournaments/{tournament}/players',
-    [
-        TournamentRegistrationController::class,
-        'index'
-    ]
-)->whereNumber('tournament');
-
-
-/*
-|--------------------------------------------------------------------------
-| Public Tournament Matches
-|--------------------------------------------------------------------------
-*/
-
-Route::get(
-    '/tournaments/{tournament}/matches',
-    [
-        MatchController::class,
-        'index'
-    ]
-)->whereNumber('tournament');
-
-Route::get(
-    '/matches/{match}',
-    [
-        MatchController::class,
-        'show'
-    ]
-)->whereNumber('match');
-
-
-/*
-|--------------------------------------------------------------------------
-| Tournament Champion
-|--------------------------------------------------------------------------
-*/
-
-Route::get(
-    '/tournaments/{tournament}/champion',
-    [
-        TournamentController::class,
-        'champion'
-    ]
-)->whereNumber('tournament');

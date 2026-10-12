@@ -8,20 +8,25 @@ import PlayerRoute from './components/PlayerRoute'
 import Dashboard from './pages/Dashboard'
 import Tournaments from './pages/Tournaments'
 import TournamentDetails from './pages/TournamentDetails'
-import CreateTournament from './pages/CreateTournament'
+
 import MyMatches from './pages/MyMatches'
 import MatchDetails from './pages/MatchDetails'
 import SubmitResult from './pages/SubmitResult'
+
 import OrganizerResults from './pages/OrganizerResults'
+import OrganizerTournaments from './pages/OrganizerTournaments'
+import CreateTournament from './pages/CreateTournament'
+
 import Profile from './pages/Profile'
 import Leaderboard from './pages/Leaderboard'
 import Notifications from './pages/Notifications'
 import Reports from './pages/Reports'
 import AdminDashboard from './pages/AdminDashboard'
-import OrganizerTournaments from './pages/OrganizerTournaments'
+import MatchCenter from './pages/MatchCenter'
 
 import Login from './pages/Login'
 import Register from './pages/Register'
+
 
 function App() {
   return (
@@ -29,7 +34,7 @@ function App() {
       <Routes>
 
         {/* =====================================================
-            PUBLIC
+            PUBLIC ROUTES
         ===================================================== */}
 
         <Route
@@ -44,17 +49,24 @@ function App() {
 
 
         {/* =====================================================
-            PROTECTED
+            PROTECTED ROUTES
         ===================================================== */}
 
         <Route element={<ProtectedRoute />}>
 
           <Route element={<DashboardLayout />}>
 
-            {/* Dashboard */}
+            {/* =================================================
+                DASHBOARD
+            ================================================= */}
 
             <Route
               path="/"
+              element={<Dashboard />}
+            />
+
+            <Route
+              path="/dashboard"
               element={<Dashboard />}
             />
 
@@ -68,32 +80,47 @@ function App() {
               element={<Tournaments />}
             />
 
-            {/* Create Tournament
-                Organizer Mode ONLY */}
+            <Route
+              path="/tournaments/:id"
+              element={<TournamentDetails />}
+            />
+
+
+            {/* =================================================
+                PLAYER MATCHES
+            ================================================= */}
 
             <Route
-              path="/tournaments/create"
+              path="/matches"
               element={
-                <OrganizerRoute>
-                  <CreateTournament />
-                </OrganizerRoute>
+                <PlayerRoute>
+                  <MyMatches />
+                </PlayerRoute>
               }
             />
 
             <Route
-  path="/organizer/tournaments"
-  element={
-    <OrganizerRoute>
-      <OrganizerTournaments />
-    </OrganizerRoute>
-  }
-/>
-
-            {/* Tournament Details */}
+              path="/matches/:id"
+              element={<MatchDetails />}
+            />
 
             <Route
-              path="/tournaments/:id"
-              element={<TournamentDetails />}
+              path="/matches/:id/result"
+              element={<SubmitResult />}
+            />
+
+            <Route
+    path="/tournaments/:tournamentId/matches/:matchId"
+    element={<MatchCenter />}
+/>
+
+            {/* =================================================
+                LEADERBOARD
+            ================================================= */}
+
+            <Route
+              path="/leaderboard"
+              element={<Leaderboard />}
             />
 
 
@@ -108,16 +135,6 @@ function App() {
 
 
             {/* =================================================
-                LEADERBOARD
-            ================================================= */}
-
-            <Route
-              path="/leaderboard"
-              element={<Leaderboard />}
-            />
-
-
-            {/* =================================================
                 PROFILE
             ================================================= */}
 
@@ -128,79 +145,35 @@ function App() {
 
 
             {/* =================================================
-                MATCHES
-            ================================================= */}
-
-            <Route
-  path="/dashboard"
-  element={<Dashboard />}
-/>
-
-<Route
-  path="/tournaments"
-  element={<Tournaments />}
-/>
-
-<Route
-  path="/tournaments/:id"
-  element={<TournamentDetails />}
-/>
-
-<Route
-  path="/my-matches"
-  element={
-    <PlayerRoute>
-      <MyMatches />
-    </PlayerRoute>
-  }
-/>
-
-<Route
-  path="/leaderboard"
-  element={<Leaderboard />}
-/>
-
-<Route
-  path="/tournaments/create"
-  element={
-    <OrganizerRoute>
-      <CreateTournament />
-    </OrganizerRoute>
-  }
-/>
-
-<Route
-  path="/organizer/results"
-  element={
-    <OrganizerRoute>
-      <OrganizerResults />
-    </OrganizerRoute>
-  }
-/>
-
-<Route
-  path="/reports"
-  element={
-    <OrganizerRoute>
-      <Reports />
-    </OrganizerRoute>
-  }
-/>
-
-            <Route
-              path="/matches/:id"
-              element={<MatchDetails />}
-            />
-
-            <Route
-              path="/matches/:id/result"
-              element={<SubmitResult />}
-            />
-
-
-            {/* =================================================
                 ORGANIZER
             ================================================= */}
+
+            <Route
+              path="/organizer/tournaments"
+              element={
+                <OrganizerRoute>
+                  <OrganizerTournaments />
+                </OrganizerRoute>
+              }
+            />
+
+            <Route
+              path="/tournaments/create"
+              element={
+                <OrganizerRoute>
+                  <CreateTournament />
+                </OrganizerRoute>
+              }
+            />
+
+            <Route
+              path="/organizer/tournaments/create"
+              element={
+                <OrganizerRoute>
+                  <CreateTournament />
+                </OrganizerRoute>
+              }
+            />
 
             <Route
               path="/organizer/results"

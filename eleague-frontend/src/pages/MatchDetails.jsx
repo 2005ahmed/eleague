@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react'
 import api from '../services/api'
+import MatchChat from '../components/MatchChat'
 
 function MatchDetails() {
   const { id } = useParams()
@@ -74,6 +75,10 @@ function MatchDetails() {
   const getPlayerInitial = (player) => {
     const name = getPlayerName(player)
 
+    if (!player) {
+      return '?'
+    }
+
     return name.charAt(0).toUpperCase()
   }
 
@@ -86,7 +91,11 @@ function MatchDetails() {
       return 'Pending verification'
     }
 
-    return 'Scheduled'
+    if (match?.status === 'scheduled') {
+      return 'Scheduled'
+    }
+
+    return match?.status || 'Scheduled'
   }
 
   const getStatusIcon = () => {
@@ -113,6 +122,29 @@ function MatchDetails() {
   const isParticipant =
     isCurrentPlayer(match?.player1) ||
     isCurrentPlayer(match?.player2)
+
+  /*
+   * Knockout bracket support:
+   *
+   * Future matches are pre-created by the backend with
+   * player1_id/player2_id equal to null.
+   *
+   * Such a match must not be playable until both players
+   * are known.
+   */
+  const hasPlayer1 = Boolean(
+    match?.player1_id || match?.player1?.id
+  )
+
+  const hasPlayer2 = Boolean(
+    match?.player2_id || match?.player2?.id
+  )
+
+  const hasBothPlayers = hasPlayer1 && hasPlayer2
+
+  const isWaitingForPlayers =
+    match?.status === 'scheduled' &&
+    !hasBothPlayers
 
   const hasPendingResult =
     match?.results?.some(
@@ -168,7 +200,6 @@ function MatchDetails() {
         setShowReportModal(false)
         setReportSuccess('')
       }, 1800)
-
     } catch (err) {
       console.error(err)
 
@@ -287,11 +318,20 @@ function MatchDetails() {
               ? 'bg-green-500/10 text-green-400 border border-green-500/20'
               : match.status === 'pending'
                 ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
-                : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                : isWaitingForPlayers
+                  ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
+                  : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
           }`}
         >
-          {getStatusIcon()}
-          {getStatusLabel()}
+          {isWaitingForPlayers ? (
+            <Clock size={17} />
+          ) : (
+            getStatusIcon()
+          )}
+
+          {isWaitingForPlayers
+            ? 'Waiting for players'
+            : getStatusLabel()}
         </div>
 
       </div>
@@ -321,6 +361,8 @@ function MatchDetails() {
             </div>
           )}
 
+          <MatchChat match={match} />
+
         </div>
 
         {/* Players */}
@@ -331,7 +373,13 @@ function MatchDetails() {
             {/* Player 1 */}
             <div className="text-center">
 
-              <div className="w-24 h-24 mx-auto rounded-full bg-blue-600/10 border border-blue-500/20 flex items-center justify-center text-3xl font-bold text-blue-400">
+              <div
+                className={`w-24 h-24 mx-auto rounded-full flex items-center justify-center text-3xl font-bold ${
+                  player1
+                    ? 'bg-blue-600/10 border border-blue-500/20 text-blue-400'
+                    : 'bg-white/[0.03] border border-dashed border-white/10 text-gray-600'
+                }`}
+              >
                 {getPlayerInitial(player1)}
               </div>
 
@@ -364,7 +412,7 @@ function MatchDetails() {
             <div className="text-center">
 
               <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">
-                Score
+                {isWaitingForPlayers ? 'VS' : 'Score'}
               </p>
 
               <div className="flex items-center gap-4">
@@ -393,12 +441,24 @@ function MatchDetails() {
                 </p>
               )}
 
+              {isWaitingForPlayers && (
+                <p className="text-xs text-yellow-500/70 mt-3">
+                  Waiting for both players
+                </p>
+              )}
+
             </div>
 
             {/* Player 2 */}
             <div className="text-center">
 
-              <div className="w-24 h-24 mx-auto rounded-full bg-purple-600/10 border border-purple-500/20 flex items-center justify-center text-3xl font-bold text-purple-400">
+              <div
+                className={`w-24 h-24 mx-auto rounded-full flex items-center justify-center text-3xl font-bold ${
+                  player2
+                    ? 'bg-purple-600/10 border border-purple-500/20 text-purple-400'
+                    : 'bg-white/[0.03] border border-dashed border-white/10 text-gray-600'
+                }`}
+              >
                 {getPlayerInitial(player2)}
               </div>
 
@@ -431,6 +491,40 @@ function MatchDetails() {
 
         </div>
       </div>
+
+      {/* Waiting for players */}
+      {isWaitingForPlayers && (
+        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-2xl p-6">
+
+          <div className="flex items-start gap-4">
+
+            <div className="w-11 h-11 rounded-xl bg-yellow-500/10 flex items-center justify-center shrink-0">
+              <Clock
+                size={22}
+                className="text-yellow-400"
+              />
+            </div>
+
+            <div>
+              <h2 className="font-bold text-yellow-400">
+                Waiting for players
+              </h2>
+
+              <p className="text-gray-500 text-sm mt-1">
+                This match is waiting for the qualified players
+                from the previous round.
+              </p>
+
+              <p className="text-gray-600 text-xs mt-2">
+                The match will become available automatically
+                once both player slots are filled.
+              </p>
+            </div>
+
+          </div>
+
+        </div>
+      )}
 
       {/* Pending verification */}
       {hasPendingResult && match.status !== 'completed' && (
@@ -519,6 +613,7 @@ function MatchDetails() {
 
       {/* Submit Result */}
       {match.status === 'scheduled' &&
+        hasBothPlayers &&
         isParticipant &&
         !hasPendingResult && (
           <div className="bg-[#0d0f15] border border-white/10 rounded-2xl p-6">
@@ -560,6 +655,20 @@ function MatchDetails() {
           </div>
         )}
 
+      {/* Scheduled match but current user is not participant */}
+      {match.status === 'scheduled' &&
+        hasBothPlayers &&
+        !isParticipant &&
+        user && (
+          <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-6">
+
+            <p className="text-gray-400">
+              Vous n'êtes pas un participant de ce match.
+            </p>
+
+          </div>
+        )}
+
       {/* Report / Dispute */}
       {match.status === 'completed' &&
         isParticipant && (
@@ -596,19 +705,6 @@ function MatchDetails() {
               </button>
 
             </div>
-
-          </div>
-        )}
-
-      {/* Not participant */}
-      {match.status === 'scheduled' &&
-        !isParticipant &&
-        user && (
-          <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-6">
-
-            <p className="text-gray-400">
-              Vous n'êtes pas un participant de ce match.
-            </p>
 
           </div>
         )}
@@ -790,7 +886,7 @@ function MatchDetails() {
                   <div className="flex items-start gap-3">
                     <CheckCircle
                       size={18}
-                      className="text-green-400 mt-0.5 shrink-0"
+                      className="text-green-400"
                     />
 
                     <p className="text-sm text-green-400">

@@ -9,27 +9,35 @@ class TournamentMatch extends Model
 {
     use HasFactory;
 
-    protected $table = 'tournament_matches';
-
     protected $fillable = [
-    'tournament_id',
-    'round',
-    'player1_id',
-    'player2_id',
-    'player1_score',
-    'player2_score',
-    'winner_id',
-    'scheduled_at',
-    'status',
-];
+        'tournament_id',
+        'round',
+        'group',
+        'bracket',
+        'player1_id',
+        'player2_id',
+        'player1_score',
+        'player2_score',
+        'winner_id',
+        'scheduled_at',
+        'status',
+    ];
 
     protected $casts = [
         'scheduled_at' => 'datetime',
     ];
 
+    /*
+    |--------------------------------------------------------------------------
+    | Relationships
+    |--------------------------------------------------------------------------
+    */
+
     public function tournament()
     {
-        return $this->belongsTo(Tournament::class);
+        return $this->belongsTo(
+            Tournament::class
+        );
     }
 
     public function player1()
@@ -58,11 +66,25 @@ class TournamentMatch extends Model
 
     public function results()
     {
-        return $this->hasMany(Result::class, 'match_id');
+        return $this->hasMany(
+            Result::class,
+            'match_id'
+        );
     }
 
     public function reports()
     {
-        return $this->hasMany(Report::class, 'match_id');
+        return $this->hasMany(
+            Report::class,
+            'match_id'
+        );
+    }
+
+    public function messages()
+    {
+        return $this->hasMany(
+            MatchMessage::class,
+            'match_id'
+        );
     }
 }

@@ -2,74 +2,180 @@
 
 namespace App\Console\Commands;
 
-use Illuminate\Console\Command;
 use App\Models\Tournament;
 use App\Services\TournamentBracketService;
-use RuntimeException;
+use Illuminate\Console\Command;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 
 class StartReadyTournaments extends Command
 {
-    protected $signature = 'tournaments:start-ready';
+    protected $signature = 'tournaments:auto-start';
 
-    protected $description =
-        'Start tournaments that are full and have reached their start date';
+    protected $description = 'Automatically start tournaments that are full and whose start date has arrived.';
 
     public function handle(
         TournamentBracketService $bracketService
-    ) {
+    ): int {
+        $now = Carbon::now();
+
         $tournaments = Tournament::query()
-            ->where('status', 'registration')
+            ->withCount('players')
+            ->whereIn('status', [
+                'registration',
+                'published',
+            ])
             ->whereNotNull('start_date')
-            ->where('start_date', '<=', now())
-            ->with('players')
+            ->where('start_date', '<=', $now)
             ->get();
 
+        if ($tournaments->isEmpty()) {
+            $this->info(
+                'No tournaments are ready to start.'
+            );
+
+            return self::SUCCESS;
+        }
+
         foreach ($tournaments as $tournament) {
-
-            $playersCount = $tournament
-                ->players()
-                ->wherePivot('status', 'registered')
-                ->count();
-
-            /*
-            |--------------------------------------------------------------------------
-            | Tournament must be full
-            |--------------------------------------------------------------------------
-            */
-
-            if (
-                $playersCount < $tournament->max_players
-            ) {
-                continue;
-            }
-
-            /*
-            |--------------------------------------------------------------------------
-            | Generate bracket + start
-            |--------------------------------------------------------------------------
-            */
-
             try {
-
-                $result =
-                    $bracketService->generate(
-                        $tournament
-                    );
-
-                $this->info(
-                    "Tournament #{$tournament->id} started. " .
-                    "{$result['matches_created']} matches created."
+                $this->startTournament(
+                    $tournament,
+                    $bracketService
+                );
+            } catch (\Throwable $e) {
+                Log::error(
+                    'Tournament auto-start failed.',
+                    [
+                        'tournament_id' =>
+                            $tournament->id,
+                        'message' =>
+                            $e->getMessage(),
+                        'trace' =>
+                            $e->getTraceAsString(),
+                    ]
                 );
 
-            } catch (RuntimeException $e) {
-
                 $this->error(
-                    "Tournament #{$tournament->id}: " .
-                    $e->getMessage()
+                    "Tournament #{$tournament->id} failed: {$e->getMessage()}"
                 );
             }
         }
 
         return self::SUCCESS;
+    }
+
+    protected function startTournament(
+        Tournament $tournament,
+        TournamentBracketService $bracketService
+    ): void {
+        $playersCount =
+            (int) $tournament->players_count;
+
+        $maxPlayers =
+            (int) $tournament->max_players;
+
+        /*
+        |--------------------------------------------------------------------------
+        | Tournament must be full
+        |--------------------------------------------------------------------------
+        */
+
+        if ($playersCount < $maxPlayers) {
+            $this->line(
+                "Tournament #{$tournament->id}: waiting for players ({$playersCount}/{$maxPlayers})."
+            );
+
+            return;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Extra protection against duplicate starts
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            $tournament->status ===
+            'in_progress'
+        ) {
+            $this->line(
+                "Tournament #{$tournament->id}: already in progress."
+            );
+
+            return;
+        }
+
+        if (
+            in_array(
+                $tournament->status,
+                [
+                    'completed',
+                    'cancelled',
+                ],
+                true
+            )
+        ) {
+            return;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Make sure we don't generate a second bracket
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            $tournament
+                ->matches()
+                ->exists()
+        ) {
+            $this->line(
+                "Tournament #{$tournament->id}: matches already exist, skipping."
+            );
+
+            return;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Generate the correct tournament system
+        |--------------------------------------------------------------------------
+        */
+
+        $this->info(
+            "Starting tournament #{$tournament->id} ({$tournament->format})..."
+        );
+
+        $bracketService->generate(
+            $tournament
+        );
+
+        /*
+        |--------------------------------------------------------------------------
+        | Refresh and verify
+        |--------------------------------------------------------------------------
+        */
+
+        $tournament->refresh();
+
+        $this->info(
+            "Tournament #{$tournament->id} started successfully."
+        );
+
+        $this->line(
+            "Format: {$tournament->format}"
+        );
+
+        $this->line(
+            "Players: {$playersCount}/{$maxPlayers}"
+        );
+
+        $this->line(
+            "Matches: " .
+            $tournament
+                ->matches()
+                ->count()
+        );
     }
 }

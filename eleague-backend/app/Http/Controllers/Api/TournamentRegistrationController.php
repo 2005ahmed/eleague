@@ -14,7 +14,7 @@ use RuntimeException;
 class TournamentRegistrationController extends Controller
 {
     /**
-     * Register current player in a tournament
+     * Register current player in a tournament.
      */
     public function store(
         Request $request,
@@ -47,53 +47,155 @@ class TournamentRegistrationController extends Controller
         }
 
         // ============================================================
-        // ALREADY REGISTERED
+        // REGISTER SAFELY
         // ============================================================
 
-        $alreadyRegistered = $tournament
-            ->players()
-            ->where('players.id', $player->id)
-            ->exists();
+        try {
+            $registration = DB::transaction(function () use (
+                $tournament,
+                $player
+            ) {
+                /*
+                 * Lock tournament row.
+                 *
+                 * This prevents two players from taking
+                 * the last available slot at the same time.
+                 */
+                $lockedTournament = Tournament::query()
+                    ->where('id', $tournament->id)
+                    ->lockForUpdate()
+                    ->first();
 
-        if ($alreadyRegistered) {
-            return response()->json([
-                'message' =>
-                    'Vous êtes déjà inscrit à ce tournoi.'
-            ], 409);
-        }
+                if (!$lockedTournament) {
+                    return [
+                        'error' => [
+                            'message' =>
+                                'Tournoi introuvable.',
+                            'status' => 404,
+                        ],
+                    ];
+                }
 
-        // ============================================================
-        // CAPACITY
-        // ============================================================
+                // ====================================================
+                // STATUS CHECK AGAIN AFTER LOCK
+                // ====================================================
 
-        $playersCount = $tournament
-            ->players()
-            ->wherePivot('status', 'registered')
-            ->count();
+                if (
+                    $lockedTournament->status !==
+                    'registration'
+                ) {
+                    return [
+                        'error' => [
+                            'message' =>
+                                'Les inscriptions sont fermées pour ce tournoi.',
+                            'status' => 422,
+                        ],
+                    ];
+                }
 
-        if ($playersCount >= $tournament->max_players) {
-            return response()->json([
-                'message' =>
-                    'Ce tournoi est complet.'
-            ], 422);
-        }
+                // ====================================================
+                // ALREADY REGISTERED
+                // ====================================================
 
-        // ============================================================
-        // REGISTER PLAYER
-        // ============================================================
+                $alreadyRegistered = $lockedTournament
+                    ->players()
+                    ->where('players.id', $player->id)
+                    ->wherePivot(
+                        'status',
+                        'registered'
+                    )
+                    ->exists();
 
-        DB::transaction(function () use (
-            $tournament,
-            $player
-        ) {
-            $tournament->players()->attach(
-                $player->id,
+                if ($alreadyRegistered) {
+                    return [
+                        'error' => [
+                            'message' =>
+                                'Vous êtes déjà inscrit à ce tournoi.',
+                            'status' => 409,
+                        ],
+                    ];
+                }
+
+                // ====================================================
+                // CAPACITY
+                // ====================================================
+
+                $playersCount = $lockedTournament
+                    ->players()
+                    ->wherePivot(
+                        'status',
+                        'registered'
+                    )
+                    ->count();
+
+                if (
+                    $playersCount >=
+                    (int) $lockedTournament->max_players
+                ) {
+                    return [
+                        'error' => [
+                            'message' =>
+                                'Ce tournoi est complet.',
+                            'status' => 422,
+                        ],
+                    ];
+                }
+
+                // ====================================================
+                // REGISTER PLAYER
+                // ====================================================
+
+                $lockedTournament
+                    ->players()
+                    ->attach(
+                        $player->id,
+                        [
+                            'status' => 'registered',
+                            'joined_at' => now(),
+                        ]
+                    );
+
+                return [
+                    'success' => true,
+                    'tournament' =>
+                        $lockedTournament,
+                    'players_count' =>
+                        $playersCount + 1,
+                ];
+            });
+
+            // ========================================================
+            // HANDLE TRANSACTION ERROR RESPONSE
+            // ========================================================
+
+            if (isset($registration['error'])) {
+                return response()->json(
+                    $registration['error'],
+                    $registration['error']['status']
+                );
+            }
+
+        } catch (\Throwable $e) {
+
+            Log::error(
+                'Tournament registration failed.',
                 [
-                    'status' => 'registered',
-                    'joined_at' => now(),
+                    'tournament_id' =>
+                        $tournament->id,
+
+                    'player_id' =>
+                        $player->id,
+
+                    'error' =>
+                        $e->getMessage(),
                 ]
             );
-        });
+
+            return response()->json([
+                'message' =>
+                    'Impossible de rejoindre ce tournoi pour le moment.'
+            ], 500);
+        }
 
         // ============================================================
         // NOTIFICATION TO PLAYER
@@ -115,8 +217,8 @@ class TournamentRegistrationController extends Controller
         // ============================================================
 
         /*
-         * Même si l'organisateur s'inscrit à son propre tournoi,
-         * on ne veut pas lui envoyer une notification à lui-même.
+         * Do not notify the organizer if they somehow
+         * register to their own tournament.
          */
 
         if ($tournament->organizer_id !== $user->id) {
@@ -145,7 +247,7 @@ class TournamentRegistrationController extends Controller
         // 2. start_date exists
         // 3. start_date has arrived
         //
-        // Then the bracket is generated automatically.
+        // Then the bracket/matches are generated automatically.
         //
 
         $tournament->refresh();
@@ -156,7 +258,8 @@ class TournamentRegistrationController extends Controller
             ->count();
 
         $shouldStart =
-            $playersCount >= $tournament->max_players &&
+            $playersCount >=
+                (int) $tournament->max_players &&
             $tournament->status === 'registration' &&
             $tournament->start_date !== null &&
             now()->greaterThanOrEqualTo(
@@ -176,7 +279,8 @@ class TournamentRegistrationController extends Controller
                  * Registration succeeded.
                  *
                  * If bracket generation fails,
-                 * the scheduler can retry later.
+                 * registration remains valid and
+                 * the organizer/scheduler can retry later.
                  */
 
                 Log::warning(
@@ -184,6 +288,9 @@ class TournamentRegistrationController extends Controller
                     [
                         'tournament_id' =>
                             $tournament->id,
+
+                        'format' =>
+                            $tournament->format,
 
                         'reason' =>
                             $e->getMessage(),
@@ -208,19 +315,32 @@ class TournamentRegistrationController extends Controller
             'player_id' =>
                 $player->id,
 
+            'players_count' =>
+                $playersCount,
+
+            'max_players' =>
+                (int) $tournament->max_players,
+
             'status' =>
                 $tournament->status,
+
+            'format' =>
+                $tournament->format,
         ], 201);
     }
 
     /**
-     * Unregister current player
+     * Unregister current player.
      */
     public function destroy(
         Request $request,
         Tournament $tournament
     ) {
         $user = $request->user();
+
+        // ============================================================
+        // PLAYER PROFILE
+        // ============================================================
 
         $player = $user->player;
 
@@ -243,12 +363,16 @@ class TournamentRegistrationController extends Controller
         }
 
         // ============================================================
-        // CHECK REGISTRATION
+        // CHECK ACTIVE REGISTRATION
         // ============================================================
 
         $registered = $tournament
             ->players()
             ->where('players.id', $player->id)
+            ->wherePivot(
+                'status',
+                'registered'
+            )
             ->exists();
 
         if (!$registered) {
@@ -259,11 +383,24 @@ class TournamentRegistrationController extends Controller
         }
 
         // ============================================================
-        // REMOVE PLAYER
+        // WITHDRAW PLAYER
         // ============================================================
 
-        $tournament->players()
-            ->detach($player->id);
+        /*
+         * We keep the pivot row and mark it as withdrawn
+         * instead of deleting it completely.
+         *
+         * This preserves tournament history.
+         */
+
+        $tournament
+            ->players()
+            ->updateExistingPivot(
+                $player->id,
+                [
+                    'status' => 'withdrawn',
+                ]
+            );
 
         return response()->json([
             'message' =>
@@ -272,13 +409,20 @@ class TournamentRegistrationController extends Controller
     }
 
     /**
-     * List tournament players
+     * List tournament players.
      */
     public function index(Tournament $tournament)
     {
         $players = $tournament
             ->players()
-            ->orderByPivot('joined_at', 'asc')
+            ->wherePivot(
+                'status',
+                'registered'
+            )
+            ->orderByPivot(
+                'joined_at',
+                'asc'
+            )
             ->get();
 
         return response()->json([
@@ -289,7 +433,7 @@ class TournamentRegistrationController extends Controller
                 $players->count(),
 
             'max_players' =>
-                $tournament->max_players,
+                (int) $tournament->max_players,
 
             'players' =>
                 $players,

@@ -3,5 +3,5 @@
 use Illuminate\Support\Facades\Schedule;
 
 Schedule::command(
-    'tournaments:start-ready'
+    'tournaments:auto-start'
 )->everyMinute();

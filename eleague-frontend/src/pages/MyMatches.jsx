@@ -6,7 +6,6 @@ import {
   Clock,
   CheckCircle,
   ArrowRight,
-  Gamepad2,
 } from 'lucide-react'
 import api from '../services/api'
 
@@ -91,6 +90,12 @@ function MyMatches() {
 
   const isCompleted = (match) => {
     return match.status === 'completed'
+  }
+
+  const openMatchCenter = (match) => {
+    navigate(
+      `/tournaments/${match.tournament_id}/matches/${match.id}`
+    )
   }
 
   if (loading) {
@@ -314,16 +319,17 @@ function MyMatches() {
 
                 </div>
 
-                {/* Button */}
+                {/* Match Center Button */}
                 <div className="mt-6 flex justify-end">
 
                   <button
+                    type="button"
                     onClick={() =>
-                      navigate(`/matches/${match.id}`)
+                      openMatchCenter(match)
                     }
-                    className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 px-4 py-2.5 rounded-xl text-sm font-semibold transition"
+                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 border border-blue-500 px-4 py-2.5 rounded-xl text-sm font-semibold transition"
                   >
-                    View Match
+                    Match Center
                     <ArrowRight size={16} />
                   </button>
 

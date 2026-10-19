@@ -364,11 +364,13 @@ function DashboardLayout() {
   // READ NOTIFICATION
   // =====================================================
 
-  const handleNotificationClick = async (
-    notification
-  ) => {
-    try {
-      if (!notification.is_read) {
+  const handleNotificationClick = async (notification) => {
+    // Close the notifications dropdown immediately.
+    setShowNotifications(false)
+
+    // Mark the notification as read.
+    if (!notification.is_read) {
+      try {
         await api.put(
           `/notifications/${notification.id}/read`
         )
@@ -376,23 +378,42 @@ function DashboardLayout() {
         setNotifications((current) =>
           current.map((item) =>
             item.id === notification.id
-              ? {
-                  ...item,
-                  is_read: true,
-                }
+              ? { ...item, is_read: true }
               : item
           )
         )
 
-        setUnreadCount((count) =>
-          Math.max(0, count - 1)
-        )
+        setUnreadCount((count) => Math.max(0, count - 1))
+      } catch (error) {
+        console.error('Read notification error:', error)
       }
-    } catch (error) {
-      console.error(
-        'Read notification error:',
-        error
-      )
+    }
+
+    // Navigate directly to the correct match for chat notifications.
+    const notificationData =
+      notification.data && typeof notification.data === 'object'
+        ? notification.data
+        : {}
+
+    if (
+      notification.type === 'match_message' &&
+      notificationData.tournament_id &&
+      notificationData.match_id
+    ) {
+      const targetUrl =
+        notificationData.url ||
+        `/tournaments/${notificationData.tournament_id}/matches/${notificationData.match_id}`
+
+      navigate(targetUrl)
+      return
+    }
+
+    // Navigate to the saved URL for other notification types, if available.
+    if (
+      typeof notificationData.url === 'string' &&
+      notificationData.url.startsWith('/')
+    ) {
+      navigate(notificationData.url)
     }
   }
 

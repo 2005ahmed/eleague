@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
     ArrowLeft,
@@ -9,6 +9,8 @@ import {
     Gamepad2,
     Image as ImageIcon,
     Loader2,
+    MessageCircle,
+    Send,
     RefreshCw,
     Shield,
     Swords,
@@ -59,6 +61,15 @@ function MatchCenter() {
 
     const [screenshotPreview, setScreenshotPreview] =
         useState("");
+
+    // Match chat
+    const [chatMessages, setChatMessages] = useState([]);
+    const [chatInput, setChatInput] = useState("");
+    const [chatLoading, setChatLoading] = useState(false);
+    const [chatSending, setChatSending] = useState(false);
+    const [chatError, setChatError] = useState("");
+    const chatEndRef = useRef(null);
+    const chatFirstLoadRef = useRef(true);
 
     useEffect(() => {
         loadMatch();
@@ -175,6 +186,128 @@ function MatchCenter() {
         } finally {
             setLoading(false);
             setRefreshing(false);
+        }
+    };
+
+    const canUseChat = Boolean(
+        match &&
+        (
+            (player?.id && Number(player.id) === Number(match.player1_id)) ||
+            (player?.id && Number(player.id) === Number(match.player2_id))
+        )
+    );
+
+    const loadMessages = async (silent = false) => {
+        if (!match?.id || !canUseChat) return;
+
+        try {
+            if (!silent && chatFirstLoadRef.current) {
+                setChatLoading(true);
+            }
+
+            const response = await api.get(`/matches/${match.id}/messages`);
+            const messages = Array.isArray(response.data?.messages)
+                ? response.data.messages
+                : [];
+
+            setChatMessages(messages);
+            setChatError("");
+            chatFirstLoadRef.current = false;
+
+            // Mark unread messages from the opponent as read.
+            const ownUserId = currentPlayerUserId(match, player);
+            const unreadIncoming = messages.filter(
+                (message) =>
+                    message.read_at == null &&
+                    Number(message.sender_id) !== Number(ownUserId)
+            );
+
+            if (ownUserId != null && unreadIncoming.length > 0) {
+                await Promise.allSettled(
+                    unreadIncoming.map((message) =>
+                        api.patch(`/messages/${message.id}/read`)
+                    )
+                );
+
+                setChatMessages((current) =>
+                    current.map((message) =>
+                        unreadIncoming.some((item) => item.id === message.id)
+                            ? { ...message, read_at: new Date().toISOString() }
+                            : message
+                    )
+                );
+            }
+        } catch (err) {
+            if (!silent) {
+                setChatError(
+                    err.response?.data?.message ||
+                    "Impossible de charger les messages."
+                );
+            }
+        } finally {
+            if (!silent) setChatLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (!match?.id || !canUseChat) {
+            setChatMessages([]);
+            setChatLoading(false);
+            return undefined;
+        }
+
+        chatFirstLoadRef.current = true;
+        loadMessages(false);
+
+        const intervalId = window.setInterval(() => {
+            loadMessages(true);
+        }, 3000);
+
+        return () => window.clearInterval(intervalId);
+    }, [match?.id, canUseChat]);
+
+    useEffect(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    }, [chatMessages.length]);
+
+    const handleSendMessage = async (event) => {
+        event.preventDefault();
+
+        const messageText = chatInput.trim();
+
+        if (!messageText || !match?.id || !canUseChat || chatSending) {
+            return;
+        }
+
+        setChatError("");
+
+        try {
+            setChatSending(true);
+
+            const response = await api.post(
+                `/matches/${match.id}/messages`,
+                { message: messageText }
+            );
+
+            if (response.data?.message) {
+                setChatMessages((current) => {
+                    const newMessage = response.data.message;
+                    if (current.some((item) => item.id === newMessage.id)) {
+                        return current;
+                    }
+                    return [...current, newMessage];
+                });
+            }
+
+            setChatInput("");
+            await loadMessages(true);
+        } catch (err) {
+            setChatError(
+                err.response?.data?.message ||
+                "Impossible d'envoyer le message."
+            );
+        } finally {
+            setChatSending(false);
         }
     };
 
@@ -788,6 +921,139 @@ function MatchCenter() {
                     </div>
                 </section>
 
+                {/* MATCH CHAT */}
+                <section className="rounded-3xl border border-slate-800 bg-slate-900/70 overflow-hidden mb-6">
+                    <div className="p-5 border-b border-slate-800 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center">
+                                <MessageCircleIcon />
+                            </div>
+                            <div>
+                                <h2 className="font-bold text-lg">Chat du match</h2>
+                                <p className="text-sm text-slate-500">
+                                    Échangez avec votre adversaire.
+                                </p>
+                            </div>
+                        </div>
+                        {canUseChat && (
+                            <button
+                                type="button"
+                                onClick={() => loadMessages(false)}
+                                disabled={chatLoading}
+                                aria-label="Actualiser le chat"
+                                className="inline-flex items-center gap-2 rounded-xl bg-slate-800 px-3 py-2 text-sm text-slate-300 hover:bg-slate-700 disabled:opacity-50"
+                            >
+                                <RefreshCw className={`w-4 h-4 ${chatLoading ? "animate-spin" : ""}`} />
+                                <span className="hidden sm:inline">Actualiser</span>
+                            </button>
+                        )}
+                    </div>
+
+                    {!canUseChat ? (
+                        <div className="p-6 text-sm text-slate-400">
+                            Le chat est réservé aux deux joueurs qui participent à ce match.
+                        </div>
+                    ) : (
+                        <>
+                            <div
+                                className="h-80 overflow-y-auto space-y-3 p-4 sm:p-5"
+                                aria-live="polite"
+                                aria-label="Messages du match"
+                            >
+                                {chatLoading && chatMessages.length === 0 ? (
+                                    <div className="flex h-full items-center justify-center gap-2 text-sm text-slate-500">
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        Chargement des messages...
+                                    </div>
+                                ) : chatMessages.length === 0 ? (
+                                    <div className="flex h-full flex-col items-center justify-center text-center text-slate-500">
+                                        <MessageCircleIcon />
+                                        <p className="mt-3 font-medium text-slate-300">Aucun message pour le moment</p>
+                                        <p className="mt-1 text-sm">Envoyez le premier message à votre adversaire.</p>
+                                    </div>
+                                ) : (
+                                    chatMessages.map((message) => {
+                                        const ownMessage = isOwnChatMessage(message, match, player);
+                                        return (
+                                            <div
+                                                key={message.id}
+                                                className={`flex ${ownMessage ? "justify-end" : "justify-start"}`}
+                                            >
+                                                <div className={`max-w-[85%] sm:max-w-[75%] rounded-2xl px-4 py-3 ${
+                                                    ownMessage
+                                                        ? "rounded-br-md bg-indigo-600 text-white"
+                                                        : "rounded-bl-md border border-slate-700 bg-slate-800 text-slate-100"
+                                                }`}>
+                                                    <div className={`mb-1 text-xs font-semibold ${
+                                                        ownMessage ? "text-indigo-100" : "text-indigo-300"
+                                                    }`}>
+                                                        {ownMessage ? "Vous" : (message.sender?.name || "Adversaire")}
+                                                    </div>
+                                                    <p className="whitespace-pre-wrap break-words text-sm">{message.message}</p>
+                                                    <div className={`mt-2 flex items-center justify-end gap-1 text-[11px] ${
+                                                        ownMessage ? "text-indigo-200" : "text-slate-400"
+                                                    }`}>
+                                                        <span>{formatChatTime(message.created_at)}</span>
+                                                        {ownMessage && message.read_at && (
+                                                            <CheckCircle2 className="h-3 w-3" aria-label="Lu" />
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })
+                                )}
+                                <div ref={chatEndRef} />
+                            </div>
+
+                            {chatError && (
+                                <div className="mx-4 mb-3 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">
+                                    {chatError}
+                                </div>
+                            )}
+
+                            <form onSubmit={handleSendMessage} className="border-t border-slate-800 p-4 sm:p-5">
+                                <label htmlFor="match-chat-input" className="sr-only">
+                                    Votre message
+                                </label>
+                                <div className="flex items-end gap-3">
+                                    <textarea
+                                        id="match-chat-input"
+                                        value={chatInput}
+                                        onChange={(event) => setChatInput(event.target.value)}
+                                        onKeyDown={(event) => {
+                                            if (event.key === "Enter" && !event.shiftKey) {
+                                                event.preventDefault();
+                                                event.currentTarget.form?.requestSubmit();
+                                            }
+                                        }}
+                                        rows={1}
+                                        maxLength={2000}
+                                        placeholder="Écrivez un message... (Entrée pour envoyer)"
+                                        disabled={chatSending}
+                                        className="min-h-12 max-h-32 flex-1 resize-y rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-indigo-500 disabled:opacity-50"
+                                    />
+                                    <button
+                                        type="submit"
+                                        disabled={chatSending || !chatInput.trim()}
+                                        className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
+                                    >
+                                        {chatSending ? (
+                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                        ) : (
+                                            <SendIcon />
+                                        )}
+                                        <span className="hidden sm:inline">{chatSending ? "Envoi..." : "Envoyer"}</span>
+                                    </button>
+                                </div>
+                                <p className="mt-2 text-xs text-slate-500">
+                                    Maximum 2 000 caractères. Maj + Entrée pour passer à la ligne.
+                                </p>
+                            </form>
+                        </>
+                    )}
+                </section>
+
                 {/* RESULT */}
                 {match?.status ===
                     "scheduled" && (
@@ -1148,6 +1414,45 @@ function MatchCenter() {
             </div>
         </div>
     );
+}
+
+function MessageCircleIcon() {
+    return <MessageCircle className="w-5 h-5" />;
+}
+
+function SendIcon() {
+    return <Send className="h-4 w-4" />;
+}
+
+function currentPlayerUserId(match, player) {
+    if (!match || !player) return null;
+
+    if (Number(player.id) === Number(match.player1_id)) {
+        return match.player1?.user_id ?? match.player1?.user?.id ?? player.user_id ?? player.user?.id ?? null;
+    }
+
+    if (Number(player.id) === Number(match.player2_id)) {
+        return match.player2?.user_id ?? match.player2?.user?.id ?? player.user_id ?? player.user?.id ?? null;
+    }
+
+    return player.user_id ?? player.user?.id ?? null;
+}
+
+function isOwnChatMessage(message, match, player) {
+    const userId = currentPlayerUserId(match, player);
+    return userId != null && Number(message?.sender_id) === Number(userId);
+}
+
+function formatChatTime(value) {
+    if (!value) return "";
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+
+    return new Intl.DateTimeFormat("fr-FR", {
+        hour: "2-digit",
+        minute: "2-digit",
+    }).format(date);
 }
 
 /*
